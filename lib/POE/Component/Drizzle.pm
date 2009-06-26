@@ -3,7 +3,7 @@ use strict;
 use warnings;
 use base qw/Exporter/;
 use Net::Drizzle ':constants';
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 our @EXPORT = @Net::Drizzle::EXPORT_OK;
 use POE;
 use IO::Poll qw/POLLIN POLLOUT/;
@@ -61,7 +61,7 @@ sub spawn {
                 }
                 ### select(2): $newcon->fd
                 $container->{fh} = $newcon->fh;
-                $_[KERNEL]->select($container->{fh}, 'handle_select', 'handle_select', undef, $container);
+                _rewatch($_[KERNEL], $container);
             },
             handle_select => sub {
                 my ($mode, $container) = ($_[ARG1], $_[ARG2]);
@@ -89,6 +89,31 @@ sub spawn {
     );
 }
 
+sub _rewatch {
+    my ($kernel, $container) = @_;
+    return unless $container->{fh};
+
+    my $events = $container->{con}->events;
+    if ($events & POLLIN) {
+        $kernel->select_read($container->{fh}, 'handle_select', $container);
+        $container->{watch_read} = 1;
+    } else {
+        if ($container->{watch_read}) {
+            $kernel->select_read($container->{fh});
+            $container->{watch_read} = 0;
+        }
+    }
+    if ($events & POLLOUT) {
+        $kernel->select_write($container->{fh}, 'handle_select', $container);
+        $container->{watch_write} = 1;
+    } else {
+        if ($container->{watch_write}) {
+            $kernel->select_write($container->{fh});
+            $container->{watch_write} = 0;
+        }
+    }
+}
+
 sub handle_once {
     my ($kernel, $session, $heap, $container, $mode) = @_;
     # ## handle once
@@ -100,6 +125,9 @@ sub handle_once {
     my ($ret, $query) = $drizzle->query_run();
     if ($ret != DRIZZLE_RETURN_IO_WAIT && $ret != DRIZZLE_RETURN_OK) {
         die "query error: " . $drizzle->error(). '('.$drizzle->error_code .')';
+    }
+    if ($container->{fh}) {
+        _rewatch($kernel, $container);
     }
     if ($query) {
         ### got a query
@@ -185,7 +213,13 @@ You can send the queries with non-blocking I/O.
 
 Tokuhiro Matsuno E<lt>tokuhirom  slkjfd gmail.comE<gt>
 
+=head1 THANKS TO
+
+kazuhooku
+
 =head1 SEE ALSO
+
+L<Net::Drizzle>, L<POE>
 
 =head1 LICENSE
 

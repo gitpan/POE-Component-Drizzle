@@ -23,9 +23,9 @@ no_index:
     - xt
 requires:
   Filter::Util::Call: 0
-  Net::Drizzle: 0.02
+  Net::Drizzle: 0.05
   POE: 1.006
   perl: 5.8.1
 resources:
   license: http://dev.perl.org/licenses/
-version: 0.01
+version: 0.02
